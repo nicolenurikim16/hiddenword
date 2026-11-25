@@ -372,7 +372,7 @@ function vLobby() {
       rules()),
     hostBar());
 }
-const DIFFS = [['easy', '쉬움', '가까운 낱말은 대부분 90%를 넘깁니다. 같은 범주의 낱말도 넘깁니다.'], ['normal', '보통', '상위어·반의어·단짝 낱말, 바로 떠오르는 상황이나 대상이면 90%를 넘깁니다.'], ['hard', '어려움', '동의어, 상위어, 반의어, 단짝 낱말 정도여야 90%를 넘깁니다.']];
+const DIFFS = [['easy', '쉬움', '가까운 낱말이면 90%가 비교적 쉽게 나옵니다.'], ['normal', '보통', '아주 가까운 낱말이어야 90%를 넘깁니다.'], ['hard', '어려움', '동의어에 가까운 낱말이어야 90%를 넘깁니다.']];
 function diffBox() {
   const cur = DIFFS.find(x => x[0] === (S.diff || 'normal')) || DIFFS[1];
   return h('div', { class: 'stack', style: 'gap:8px' },

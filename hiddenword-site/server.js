@@ -9,7 +9,7 @@ const MODEL = process.env.MODEL || 'claude-sonnet-5-5';          // 유사도 �
 const FAST_MODEL = process.env.FAST_MODEL || 'claude-haiku-5-5'; // 연습봇용
 const MOCK = process.env.MOCK_AI === '1';                         // 키 없이 로컬에서 돌려 볼 때
 const MAX_ROOMS = Number(process.env.MAX_ROOMS || 30);
-const CFG = { maxHints: 10, hintMs: 15 * 60000, guessMs: 5 * 60000, stop: 95, stages: 3, resultMs: Number(process.env.RESULT_MS || 15000), maxPlayers: 6 };
+const CFG = { maxHints: 10, hintMs: 15 * 60000, guessMs: 5 * 60000, stop: 90, stages: 3, resultMs: Number(process.env.RESULT_MS || 15000), maxPlayers: 6 };
 
 const WORDS = ('사과 바다 구름 시계 거울 우산 열쇠 연필 지도 편지 다리 창문 계단 지붕 마당 의자 책상 침대 냉장고 세탁기 ' +
 '자전거 기차 비행기 버스 택시 지하철 신호등 횡단보도 주차장 터널 강 호수 폭포 사막 숲 섬 화산 동굴 언덕 해변 ' +
@@ -44,37 +44,51 @@ function mockAI(prompt) {
   const m = /힌트어: "([^"]+)"/.exec(prompt);
   if (!m) { if (!hid) throw new Error('mock'); return { word: '보너스' }; }
   if (m[1] === '달리다') return { noun: false };
-  if (m[1] === '거의정답') return { noun: true, sem: 98, ctx: 96, rel: 97 };
-  const x = (m[1].charCodeAt(0) + hid.charCodeAt(0)) % 90; return { noun: true, sem: x, ctx: x, rel: x };
+  if (m[1] === '보너스') return { noun: true, sem: 80, ctx: 80, rel: 80 };
+  if (m[1] === '거의정답') return { noun: true, sem: 97, ctx: 95, rel: 97 };
+  const x = (m[1].charCodeAt(0) + hid.charCodeAt(0)) % 80; return { noun: true, sem: x, ctx: x, rel: x };
 }
-async function askJSON(prompt, fast) {
-  if (MOCK) { await new Promise(r => setTimeout(r, 20)); return mockAI(prompt); }
-  if (!KEY) { const e = new Error('no key'); e.code = 'no_api_key'; throw e; }
+function pickJSON(text) {
+  const found = text.match(/\{[^{}]*\}/g) || [];
+  for (let k = found.length - 1; k >= 0; k--) { try { return JSON.parse(found[k]); } catch (e) {} }
+  return null;
+}
+async function callAI(prompt, fast) {
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', signal: ctl.signal,
       headers: { 'content-type': 'application/json', 'x-api-key': KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: fast ? FAST_MODEL : MODEL, max_tokens: 200, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: fast ? FAST_MODEL : MODEL, max_tokens: 1024, messages: [{ role: 'user', content: prompt + '\n설명이나 풀이 과정은 쓰지 않는다. 답의 첫 글자는 { 이고 마지막 글자는 } 이다.' }] }),
     });
     if (!res.ok) { const e = new Error('api ' + res.status); e.code = 'api_' + res.status; console.error('AI error', res.status, (await res.text()).slice(0, 300)); throw e; }
     const data = await res.json();
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const a = text.indexOf('{'), b = text.lastIndexOf('}');
-    if (a < 0 || b < a) { const e = new Error('bad json'); e.code = 'bad_answer'; throw e; }
-    return JSON.parse(text.slice(a, b + 1));
+    const obj = pickJSON(text);
+    if (!obj) { console.error('AI answer without JSON. stop_reason=' + data.stop_reason + ' text=' + JSON.stringify(text.slice(0, 400))); const e = new Error('bad json'); e.code = 'bad_answer'; throw e; }
+    return obj;
   } finally { clearTimeout(t); }
 }
-const AXES = '세 가지를 각각 0~100 정수로 매긴다.\nsem(의미적 거리): 뜻 자체가 얼마나 같은가. 100=같은 단어, 95=동의어, 80=바로 위아래 상위어·하위어, 70=대표적인 반의어(같은 의미 축의 반대편이므로 무관한 것이 아니다), 50=같은 범주의 다른 것, 20 이하=무관.\nctx(문맥적 공생): 실제 말과 글에서 두 단어가 얼마나 자주 함께 쓰이는가. 95=늘 붙어 다니는 짝, 80=자주 함께 쓰임, 50=가끔, 20 이하=거의 없음.\nrel(관계적 구조): 상위·하위, 부분과 전체, 도구와 쓰임, 원인과 결과, 반대 관계처럼 둘 사이의 관계가 얼마나 직접적이고 뚜렷한가. 95=직접적이고 대표적인 관계, 80=뚜렷한 관계, 50=간접적, 20 이하=관계 없음.\n다의어는 뜻마다 따로 살펴 세 값의 합이 가장 큰 뜻을 기준으로 삼는다. 값을 후하게 주지도 짜게 주지도 않는다.';
+async function askJSON(prompt, fast) {
+  if (MOCK) { await new Promise(r => setTimeout(r, 20)); return mockAI(prompt); }
+  if (!KEY) { const e = new Error('no key'); e.code = 'no_api_key'; throw e; }
+  try { return await callAI(prompt, fast); }
+  catch (e) { if (e.code !== 'bad_answer') throw e; return await callAI(prompt, fast); } // 형식이 어긋난 답은 한 번 더 묻는다
+}
+const AXES = '판단은 표준국어대사전의 뜻풀이를 기준으로 한다. 두 낱말이 사전에서 어떤 뜻으로 풀이되는지를 떠올려 아래 세 가지를 각각 0~100 정수로 매긴다.\n1) sem = 의미적 거리: 뜻이 비슷할수록 가깝고(점수가 높고), 무관할수록 멀다(점수가 낮다). 뜻이 반대라고 해서 멀어지는 것이 아니다. 무관해야 멀어진다. 반의어는 같은 의미 축 위에 있으므로 조금만 낮다.\n2) ctx = 문맥적 공생: 두 낱말이 실제 말과 글에서 얼마나 함께 사용되는가. 한쪽 뜻풀이나 용례에 다른 쪽이 흔히 등장하면 높다.\n3) rel = 관계적 구조: 두 낱말 사이에 어떤 관계(상위·하위, 반대, 부분과 전체, 도구와 쓰임, 원인과 결과, 때와 그때 하는 일 등)가 있고 그 관계가 얼마나 직접적인가.\n다의어는 사전의 뜻갈래마다 따로 살펴 세 값이 가장 높게 나오는 뜻을 기준으로 삼는다.\n\n기준이 되는 예시(sem, ctx, rel):\n- 동의어·유의어 (아버지-아빠): 97, 92, 97\n- 바로 위아래 상위어·하위어 (과일-사과): 90, 92, 97\n- 대표적인 반의어 (낮-밤): 85, 95, 97\n- 늘 붙어 다니는 짝 (바늘-실): 60, 98, 95\n- 그 낱말 하면 바로 떠오르는 상황·대상 (선물-기념일, 노래-가수): 40, 93, 88\n- 같은 범주의 형제 낱말 (사과-배): 75, 85, 85\n- 분명하지만 간접적인 관련 (지도-여행): 45, 85, 70\n- 느슨한 연관 (지도-종이): 30, 55, 50\n- 무관 (사과-책상): 5, 5, 5\n이 예시들과 견주어 일관되게 매긴다. 낯설고 어려운 낱말이라고 점수를 더 주지 않는다.';
 const CRITERIA = AXES;
-// 유사도 공식: 가장 높은 두 기준에 무게를 두고(0.45, 0.35, 0.2), 난이도에 따라 100과의 간격을 줄인다.
-const DIFF = { easy: 0.5, normal: 0.8, hard: 1 };
+// 유사도 공식: 세 기준 가운데 높은 두 개에 0.45씩, 가장 낮은 것에 0.1을 주어 더한 뒤, 난이도에 따라 100과의 간격을 줄인다.
+const DIFF = { easy: 0.5, normal: 0.6, hard: 0.8 };
 function combine(r, diff) {
   const v = [r.sem, r.ctx, r.rel].map(x => Math.max(0, Math.min(100, Number(x)))).sort((a, b) => b - a);
   if (v.some(x => !Number.isFinite(x))) return NaN;
-  const raw = 0.45 * v[0] + 0.35 * v[1] + 0.2 * v[2];
+  const raw = 0.45 * v[0] + 0.45 * v[1] + 0.1 * v[2];
   return Math.round(100 - (100 - raw) * (DIFF[diff] || DIFF.normal));
 }
+const scorePrompt = (hidden, w) => '너는 단어 게임 "히든워드"의 유사도 심판이다. 기준어와 힌트어가 얼마나 가까운지 평가한다.\n기준어: "' + hidden + '"\n힌트어: "' + w + '"\n' + CRITERIA +
+  '\n힌트어가 표준국어대사전에 실린 명사인지도 판정한다(noun). 사전에 없는 말, 명사가 아닌 말은 false다.\n다른 말 없이 JSON만 답한다. 예: {"noun": true, "sem": 60, "ctx": 93, "rel": 90}';
+const bonusPrompt = (hidden, used) => '너는 단어 게임 "히든워드"의 심판이다. 출제자가 유사도가 충분히 높은 힌트를 내지 못해 네가 대신 힌트 낱말 하나를 낸다.\n기준어: "' + hidden + '"\n기준어와 뜻이 아주 가깝거나 직접적인 관계가 있는 낱말을 고르되, 다음을 모두 지킨다.\n- 표준국어대사전에 실린 일반명사.\n- 초등학생도 아는, 일상에서 흔히 쓰는 낱말. 드물게 쓰는 한자어, 전문어, 옛말, 사전에만 있고 실제로는 거의 쓰지 않는 낱말은 안 된다.\n- 기준어 자체, 기준어가 글자 그대로 들어간 낱말, 고유명사는 안 된다.' + (used.length ? '\n- 이미 나온 낱말도 안 된다: ' + used.join(', ') : '') +
+  '\n흔한 낱말 가운데 가장 가까운 것 하나를 고른다. 한글로만 된 한 낱말이어야 한다. 다른 말 없이 JSON만 답한다. 예: {"word": "낱말"}';
 /* ---------- rooms ---------- */
 const rooms = new Map();
 function newLobby(diff) { return { v: 1, gid: rid(), diff: diff || 'normal', phase: 'lobby', players: [], scores: {}, round: 0, order: [], envs: [], envOf: {}, ready: {}, turn: null, history: [] }; }
@@ -119,8 +133,7 @@ function openGuess(R) { const T = R.HS.turn; T.sub = 'guess'; T.gdl = Date.now()
 async function scorePending(R) {
   const st = R.HS, T = st.turn, w = T.pending.w, hidden = hiddenOf(R, st.order[T.ex]);
   try {
-    const r = await askJSON('너는 단어 게임 "히든워드"의 유사도 심판이다. 기준어와 힌트어가 얼마나 가까운지 평가한다.\n기준어: "' + hidden + '"\n힌트어: "' + w + '"\n' + CRITERIA +
-      '\n힌트어가 한국어 명사(명사형 단어)인지도 판정한다.\n다른 말 없이 JSON만 답한다. 예: {"noun": true, "sem": 60, "ctx": 85, "rel": 80}');
+    const r = await askJSON(scorePrompt(hidden, w));
     const s = combine(r || {}, st.diff);
     if (!Number.isFinite(s) && !(r && r.noun === false)) throw Object.assign(new Error('bad'), { code: 'bad_score' });
     if (st.turn !== T || !T.pending) return;
@@ -136,8 +149,10 @@ async function findBonus(R) {
   const st = R.HS, T = st.turn, hidden = hiddenOf(R, st.order[T.ex]);
   const used = T.hints.map(x => x.w).concat(T.bonus.map(x => x.w));
   try {
-    const r = await askJSON('너는 단어 게임 "히든워드"의 유사도 심판이다. 출제자가 유사도 95% 이상인 힌트를 내지 못해 네가 대신 힌트를 낸다. 기준어와 뜻이 거의 같은 동의어·유의어, 없으면 가장 가까운 한국어 일반명사 하나를 고른다.\n기준어: "' + hidden + '"\n고를 수 없는 단어: 기준어 자체, 기준어가 글자 그대로 들어간 단어, 고유명사' + (used.length ? ', ' + used.join(', ') : '') + '\n한글로만 된 한 단어여야 한다. 다른 말 없이 JSON만 답한다. 예: {"word": "단어"}');
-    const w = normHint(r && r.word), s = CFG.stop + 1 + Math.floor(Math.random() * 3);
+    const r = await askJSON(bonusPrompt(hidden, used));
+    const w = normHint(r && r.word);
+    let s = CFG.stop + 1;
+    if (w) { try { const sc = combine(await askJSON(scorePrompt(hidden, w)) || {}, st.diff); if (Number.isFinite(sc)) s = Math.max(CFG.stop, Math.min(99, sc)); } catch (e) {} }
     if (st.turn === T && w && w !== hidden && w.indexOf(hidden) < 0 && used.indexOf(w) < 0 && Number.isFinite(s)) T.bonus.push({ w, s: Math.max(CFG.stop, Math.min(99, s)), g: T.stage });
   } catch (e) {}
 }
@@ -145,7 +160,7 @@ function randomWord(avoid) { for (let i = 0; i < 40; i++) { const w = WORDS[Math
 async function botHint(R, id) {
   const T = R.HS.turn, hidden = hiddenOf(R, id), avoid = T.hints.map(x => x.w).concat(T.bonus.map(x => x.w), [hidden]);
   try {
-    const r = await askJSON('단어 게임에서 출제자가 낼 힌트를 고른다.\n기준어: "' + hidden + '"\n' + (T.hints.filter(x => x.g === T.stage).length < 2 ? '기준어와 관련은 있지만 정답이 바로 드러나지 않는 한글 일반명사 한 단어를 고른다.' : '기준어와 유사도가 95% 이상 나올 만큼 뜻이 아주 가까운 한글 일반명사 한 단어를 고른다. 기준어 자체는 안 된다.') + ' 쓸 수 없는 단어: ' + avoid.join(', ') + '\n다른 말 없이 JSON만 답한다. 예: {"word": "단어"}', true);
+    const r = await askJSON('단어 게임에서 출제자가 낼 힌트를 고른다.\n기준어: "' + hidden + '"\n' + (T.hints.filter(x => x.g === T.stage).length < 2 ? '기준어와 관련은 있지만 정답이 바로 드러나지 않는 한글 일반명사 한 단어를 고른다.' : '기준어와 유사도가 90% 이상 나올 만큼 뜻이 아주 가까운 한글 일반명사 한 단어를 고른다. 기준어 자체는 안 된다.') + ' 쓸 수 없는 단어: ' + avoid.join(', ') + '\n다른 말 없이 JSON만 답한다. 예: {"word": "단어"}', true);
     const w = normHint(r && r.word); if (w && avoid.indexOf(w) < 0 && w.indexOf(hidden) < 0) return w;
   } catch (e) {}
   return randomWord(avoid);

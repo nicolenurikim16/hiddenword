@@ -97,7 +97,7 @@ const bonusPrompt = (hidden, used) => '너는 단어 게임 "히든워드"의 �
   '\n흔한 낱말 가운데 가장 가까운 것 하나를 고른다. 한글로만 된 한 낱말이어야 한다. 다른 말 없이 JSON만 답한다. 예: {"word": "낱말"}';
 /* ---------- rooms ---------- */
 const rooms = new Map();
-function newLobby(diff) { return { v: 1, gid: rid(), diff: diff || 'normal', phase: 'lobby', players: [], scores: {}, round: 0, order: [], envs: [], envOf: {}, ready: {}, turn: null, history: [] }; }
+function newLobby(diff, rounds) { return { v: 1, gid: rid(), diff: diff || 'normal', rounds: rounds === 2 ? 2 : 3, phase: 'lobby', players: [], scores: {}, round: 0, order: [], envs: [], envOf: {}, ready: {}, turn: null, history: [] }; }
 function getRoom(code) {
   let R = rooms.get(code);
   if (!R) {
@@ -188,7 +188,8 @@ async function botThink(R) {
       if (st.envOf[id] == null) { const e = [0, 1, 2, 3, 4, 5].filter(x => Object.values(st.envOf).indexOf(x) < 0)[0]; if (e != null && !(b.pick && b.pick.g === st.gid && b.pick.e === e)) { b.pick = { g: st.gid, e }; ch = true; } }
       else if (!st.ready[id] && !(b.w1 && b.w1.g === st.gid)) { b.w1 = { g: st.gid, i: Math.floor(Math.random() * 5) }; ch = true; }
     } else if (st.phase === 'setup2') {
-      if (!st.ready[id] && !(b.w2 && b.w2.g === st.gid) && SEC.words[id]) { const r1 = SEC.words[id].r1; b.w2 = { g: st.gid, i: (r1 + 1 + Math.floor(Math.random() * 4)) % 5 }; ch = true; }
+      const wk = 'w' + (st.round + 1);
+      if (!st.ready[id] && !(b[wk] && b[wk].g === st.gid) && SEC.words[id]) { const usedI = Object.values(SEC.words[id]), free = [0, 1, 2, 3, 4].filter(i => usedI.indexOf(i) < 0); b[wk] = { g: st.gid, i: free[Math.floor(Math.random() * free.length)] }; ch = true; }
     } else if (st.phase === 'play' && st.turn) {
       const T = st.turn, key = tkey(st), exId = st.order[T.ex];
       if (T.sub === 'hint' && exId === id && !T.pending && now < T.dl) {
@@ -216,16 +217,16 @@ async function stepOnce(R) {
         const k = pr.pick;
         if (k && k.g === st.gid && Number.isInteger(k.e) && k.e >= 0 && k.e < 6 && Object.values(st.envOf).indexOf(k.e) < 0) { st.envOf[pl.id] = k.e; ch = true; }
       } else if (!st.ready[pl.id]) {
-        const w = first ? pr.w1 : pr.w2;
+        const w = pr['w' + (st.round + 1)];
         if (w && w.g === st.gid && Number.isInteger(w.i) && w.i >= 0 && w.i < 5) {
           if (first) { SEC.words[pl.id] = { r1: w.i }; st.ready[pl.id] = true; ch = true; }
-          else if (SEC.words[pl.id] && SEC.words[pl.id].r1 !== w.i) { SEC.words[pl.id].r2 = w.i; st.ready[pl.id] = true; ch = true; }
+          else if (SEC.words[pl.id] && Object.values(SEC.words[pl.id]).indexOf(w.i) < 0) { SEC.words[pl.id]['r' + (st.round + 1)] = w.i; st.ready[pl.id] = true; ch = true; }
         }
       }
     }
     if (st.players.every(pl => st.ready[pl.id])) {
       if (first) st.order = shuffle(st.players.map(p => p.id));
-      st.round = first ? 1 : 2; st.ready = {}; st.phase = 'play'; startTurn(st, 0); ch = true;
+      st.round = st.round + 1; st.ready = {}; st.phase = 'play'; startTurn(st, 0); ch = true;
     }
     return ch ? commit(R) : false;
   }
@@ -254,7 +255,7 @@ async function stepOnce(R) {
       if (g && g.k === key) { const w = normGuess(g.w); if (w) { SEC.guesses[pl.id] = w; T.guessed[pl.id] = true; ch = true; } }
     }
     if (others.every(pl => T.guessed[pl.id]) || now >= T.gdl) {
-      const hidden = hiddenOf(R, exId), pts = T.stage * (st.round === 2 ? 2 : 1);
+      const hidden = hiddenOf(R, exId), pts = st.round; // 몇 차 힌트든 같은 점수: 1라운드 1점, 2라운드 2점, 3라운드 3점
       const correct = others.filter(pl => SEC.guesses[pl.id] === hidden).map(pl => pl.id);
       let over = true;
       if (correct.length) correct.forEach(id => { st.scores[id] = (st.scores[id] || 0) + pts; });
@@ -270,7 +271,7 @@ async function stepOnce(R) {
     if (T.res.over) {
       st.history.push({ r: st.round, ex: exId, word: T.res.word, stage: T.stage, winners: T.res.correct });
       if (T.ex + 1 < st.order.length) startTurn(st, T.ex + 1);
-      else if (st.round === 1) { st.phase = 'setup2'; st.turn = null; st.ready = {}; }
+      else if (st.round < (st.rounds || 3)) { st.phase = 'setup2'; st.turn = null; st.ready = {}; }
       else { st.phase = 'end'; st.turn = null; }
     } else { T.stage++; T.sub = 'hint'; T.dl = now + CFG.hintMs; T.res = null; T.note = ''; }
     return commit(R);
@@ -300,12 +301,13 @@ async function command(R, ws, c) {
     R.SEC = { gid: st.gid, words: {}, guesses: {}, bots: R.SEC.bots };
     st.phase = 'setup'; commit(R);
   } else if (c === 'reset') {
-    R.HS = newLobby(st.diff); R.SEC = { gid: R.HS.gid, words: {}, guesses: {}, bots: R.SEC.bots }; R.msg = ''; commit(R);
+    R.HS = newLobby(st.diff, st.rounds); R.SEC = { gid: R.HS.gid, words: {}, guesses: {}, bots: R.SEC.bots }; R.msg = ''; commit(R);
   } else if (c === 'skip') { if (T && T.sub === 'result') T.nextAt = 0; }
   else if (c === 'retry') { if (T && T.pending && T.pending.st === 'error') { T.pending.st = 'scoring'; commit(R); } }
   else if (c === 'drop') { if (T && T.pending && T.pending.st === 'error') { T.pending = null; T.note = 'AI 채점에 실패한 힌트를 취소했습니다. 다른 단어를 내 주세요.'; commit(R); } }
   else if (c === 'addBot') { if (st.phase === 'lobby') { let n = 1; while (R.SEC.bots['bot' + n]) n++; if (n <= 3) R.SEC.bots['bot' + n] = { pid: 'bot' + n, name: '연습봇' + n, join: true }; } }
   else if (c.slice(0, 5) === 'diff:') { if (st.phase === 'lobby' && DIFF[c.slice(5)]) { st.diff = c.slice(5); commit(R); } }
+  else if (c === 'rounds:2' || c === 'rounds:3') { if (st.phase === 'lobby') { st.rounds = Number(c.slice(7)); commit(R); } }
   else if (c === 'clearBots') { if (st.phase === 'lobby') R.SEC.bots = {}; }
   step(R);
 }
@@ -347,7 +349,7 @@ wss.on('connection', ws => {
 function applyPatch(ws, patch) {
   if (!patch || typeof patch !== 'object') return;
   const cur = Object.assign({}, ws.presence);
-  for (const k of ['name', 'join', 'pick', 'w1', 'w2', 'hint', 'guess']) { if (!(k in patch)) continue; if (patch[k] === null) delete cur[k]; else cur[k] = patch[k]; }
+  for (const k of ['name', 'join', 'pick', 'w1', 'w2', 'w3', 'hint', 'guess']) { if (!(k in patch)) continue; if (patch[k] === null) delete cur[k]; else cur[k] = patch[k]; }
   cur.pid = ws.pid;
   if (JSON.stringify(cur).length > 2000) return;
   ws.presence = cur; ws.updatedAt = Date.now();

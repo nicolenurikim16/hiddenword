@@ -11,22 +11,23 @@ const MOCK = process.env.MOCK_AI === '1';                         // 키 없이 
 const MAX_ROOMS = Number(process.env.MAX_ROOMS || 30);
 const CFG = { maxHints: 10, hintMs: 15 * 60000, guessMs: 5 * 60000, stop: 90, stages: 3, resultMs: Number(process.env.RESULT_MS || 15000), maxPlayers: 6 };
 
-const WORDS = ('사과 바다 구름 시계 거울 우산 열쇠 연필 지도 편지 다리 창문 계단 지붕 마당 의자 책상 침대 냉장고 세탁기 ' +
-'자전거 기차 비행기 버스 택시 지하철 신호등 횡단보도 주차장 터널 강 호수 폭포 사막 숲 섬 화산 동굴 언덕 해변 ' +
-'봄 여름 가을 겨울 아침 저녁 새벽 주말 생일 휴가 눈사람 무지개 번개 안개 태풍 소나기 그림자 노을 별 달 ' +
-'고양이 강아지 토끼 거북이 고래 상어 펭귄 독수리 나비 개미 호랑이 코끼리 기린 원숭이 다람쥐 여우 늑대 곰 돼지 닭 ' +
-'김치 라면 떡볶이 김밥 비빔밥 치킨 피자 햄버거 초콜릿 아이스크림 커피 우유 주스 맥주 소금 설탕 후추 꿀 빵 케이크 ' +
-'의사 간호사 경찰 소방관 요리사 선생님 학생 가수 배우 화가 작가 기자 판사 농부 어부 군인 비행사 운전사 탐정 마술사 ' +
-'학교 병원 은행 시장 도서관 박물관 영화관 공원 놀이터 수영장 체육관 교회 절 궁전 감옥 공장 농장 항구 공항 우체국 ' +
-'축구 야구 농구 수영 달리기 등산 낚시 요가 춤 노래 그림 사진 영화 소설 만화 게임 퍼즐 장기 바둑 카드 ' +
-'사랑 우정 약속 비밀 거짓말 용기 질투 행운 꿈 기억 소문 농담 인사 선물 축제 결혼 이별 여행 모험 전쟁 ' +
-'돈 지갑 동전 보석 반지 목걸이 안경 모자 장갑 신발 양말 가방 치마 바지 단추 주머니 이불 베개 수건 비누 ' +
-'전화 컴퓨터 로봇 인터넷 카메라 라디오 텔레비전 건전지 전구 망원경 현미경 나침반 저울 온도계 자석 망치 가위 바늘 사다리 밧줄 ' +
-'나무 꽃 씨앗 뿌리 잎 열매 장미 해바라기 선인장 대나무 버섯 감자 고구마 양파 마늘 당근 오이 호박 수박 포도 ' +
-'불 물 얼음 바람 흙 돌 모래 연기 재 먼지 금 은 철 유리 종이 고무 기름 소리 빛 향기 ' +
-'복수 대화 사고 대기 질문 도장 배 눈 밤 말 차 병 벌 굴 김 풀 부자 전기 수도 경기 ' +
-'사전 지방 고장 이상 정상 부정 사기 기사 상 거리 가사 동화 수정 정원 조화 인상 자리 감정 신 장 ' +
-'대답 침묵 변명 핑계 소원 후회 오해 고백 상처 유행 습관 양심 자유 평화 시간 운명 계획 실수 이유 결과').split(' ');
+const WORDS = ('사과 바다 구름 시계 거울 우산 열쇠 연필 지도 편지 다리 계단 마당 의자 자전거 기차 비행기 버스 택시 지하철 ' +
+'신호등 횡단보도 주차장 터널 강 호수 폭포 사막 숲 섬 화산 동굴 언덕 해변 주말 생일 휴가 눈사람 무지개 번개 ' +
+'안개 태풍 소나기 그림자 노을 거북이 고래 상어 독수리 나비 개미 호랑이 여우 늑대 곰 돼지 닭 김치 라면 김밥 ' +
+'비빔밥 치킨 피자 햄버거 초콜릿 아이스크림 커피 우유 주스 맥주 소금 설탕 후추 꿀 빵 케이크 의사 간호사 경찰 소방관 ' +
+'요리사 선생님 학생 가수 배우 화가 작가 기자 판사 농부 어부 군인 비행사 운전사 탐정 마술사 학교 병원 은행 시장 ' +
+'도서관 박물관 영화관 공원 놀이터 수영장 체육관 교회 절 궁전 감옥 공장 농장 항구 공항 우체국 축구 야구 농구 수영 ' +
+'달리기 등산 낚시 요가 춤 노래 그림 사진 영화 소설 만화 게임 퍼즐 장기 바둑 카드 사랑 우정 약속 비밀 ' +
+'거짓말 용기 질투 행운 꿈 기억 소문 농담 인사 선물 축제 결혼 이별 여행 모험 전쟁 돈 지갑 동전 보석 ' +
+'반지 목걸이 안경 모자 장갑 신발 양말 가방 치마 바지 단추 주머니 이불 베개 수건 비누 전화 컴퓨터 로봇 인터넷 ' +
+'카메라 라디오 텔레비전 건전지 전구 망원경 현미경 나침반 저울 온도계 자석 망치 가위 바늘 사다리 밧줄 나무 꽃 씨앗 뿌리 ' +
+'잎 열매 장미 해바라기 선인장 대나무 버섯 감자 고구마 양파 마늘 당근 오이 호박 수박 포도 불 물 얼음 바람 ' +
+'흙 돌 모래 연기 재 먼지 금 은 철 유리 종이 고무 기름 소리 빛 향기 복수 대화 사고 대기 ' +
+'질문 도장 배 눈 밤 말 차 병 벌 굴 김 풀 부자 전기 수도 경기 사전 지방 고장 이상 ' +
+'정상 부정 사기 기사 상 거리 가사 동화 수정 정원 조화 인상 자리 감정 신 장 대답 침묵 변명 핑계 ' +
+'소원 후회 오해 고백 상처 유행 습관 양심 자유 평화 시간 운명 계획 실수 이유 결과 책임 의무 권리 경쟁 ' +
+'성공 실패 기회 위기 변화 균형 속도 무게 깊이 온도 리듬 회사 월급 회의 출근 면접 계약 알람 택배 영수증 ' +
+'이웃 선배 손님 주인 영웅 천재 범인 증인 호기심 욕심 배신 용서 신뢰 긴장 가지 고개 무리 부채').split(' ');
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -163,22 +164,32 @@ async function findBonus(R) {
   } catch (e) {}
 }
 function randomWord(avoid) { for (let i = 0; i < 40; i++) { const w = WORDS[Math.floor(Math.random() * WORDS.length)]; if (avoid.indexOf(w) < 0) return w; } return '단어'; }
+// 연습봇은 모두 상식적으로 추리하되, 눈여겨보는 부분이 조금씩 다르다.
+const COMMON = '평범한 사람처럼 상식적으로 생각한다. ';
+const BOTS = {
+  bot1: { name: '연습봇1', guess: COMMON + '여러 후보가 비슷해 보이면 유사도가 가장 높은 힌트 쪽에 조금 더 무게를 둔다.', hint: COMMON + '기준어를 들으면 떠오르는 낱말 중에서 고른다.' },
+  bot2: { name: '연습봇2', guess: COMMON + '여러 후보가 비슷해 보이면 힌트 전체에 두루 맞는 쪽에 조금 더 무게를 둔다.', hint: COMMON + '기준어와 관계가 분명한 낱말(상위어, 반의어, 함께 쓰이는 말) 중에서 고른다.' },
+  bot3: { name: '연습봇3', guess: COMMON + '여러 후보가 비슷해 보이면 힌트가 다의어이거나 합성어의 일부일 가능성도 한 번 살펴본다.', hint: COMMON + '기준어와 함께 쓰이거나 붙여 쓰는 낱말 중에서 고른다.' },
+};
 async function botHint(R, id) {
   const T = R.HS.turn, hidden = hiddenOf(R, id), avoid = T.hints.map(x => x.w).concat(T.bonus.map(x => x.w), [hidden]);
+  const far = T.hints.filter(x => x.g === T.stage).length < 2;
   try {
-    const r = await askJSON('단어 게임에서 출제자가 낼 힌트를 고른다.\n기준어: "' + hidden + '"\n' + (T.hints.filter(x => x.g === T.stage).length < 2 ? '기준어와 관련은 있지만 정답이 바로 드러나지 않는 한글 일반명사 한 단어를 고른다.' : '기준어와 유사도가 90% 이상 나올 만큼 뜻이 아주 가까운 한글 일반명사 한 단어를 고른다. 기준어 자체는 안 된다.') + ' 쓸 수 없는 단어: ' + avoid.join(', ') + '\n다른 말 없이 JSON만 답한다. 예: {"word": "단어"}', true);
+    const r = await askJSON('단어 게임에서 출제자가 되어 힌트 낱말 하나를 낸다. ' + ((BOTS[id] || BOTS.bot1).hint) + '\n기준어: "' + hidden + '"\n' + (far ? '이번에는 기준어와 관련은 있지만 정답이 바로 드러나지 않는 낱말을 고른다.' : '이번에는 기준어와 유사도가 90% 이상 나올 만큼 아주 가까운 낱말을 고른다. 기준어 자체는 안 된다.') + ' 표준국어대사전에 실린 흔한 일반명사, 한글 한 낱말이어야 한다. 쓸 수 없는 낱말: ' + avoid.join(', ') + '\n다른 말 없이 JSON만 답한다. 예: {"word": "낱말"}', true);
     const w = normHint(r && r.word); if (w && avoid.indexOf(w) < 0 && w.indexOf(hidden) < 0) return w;
   } catch (e) {}
   return randomWord(avoid);
 }
-async function botGuess(R) {
-  const T = R.HS.turn, wrong = []; T.log.forEach(l => Object.keys(l.guesses).forEach(k => wrong.push(l.guesses[k])));
+async function botGuess(R, id) {
+  const T = R.HS.turn, key = tkey(R.HS), wrong = []; T.log.forEach(l => Object.keys(l.guesses).forEach(k => wrong.push(l.guesses[k])));
+  const taken = Object.keys(R.SEC.bots).filter(b => b !== id).map(b => R.SEC.bots[b].guess).filter(g => g && g.k === key).map(g => g.w);
   const clues = T.hints.concat(T.bonus).map(x => x.w + ' ' + x.s + '%');
+  const avoid = wrong.concat(taken, T.hints.map(x => x.w), T.bonus.map(x => x.w));
   try {
-    const r = await askJSON('단어 게임에서 숨겨진 한국어 명사를 추리한다. 아래는 힌트 단어와, 숨겨진 단어와의 유사도다.\n' + clues.join(', ') + '\n이미 틀린 답: ' + (wrong.join(', ') || '없음') + '\n가장 그럴듯한 한글 명사 한 단어를 고른다. 다른 말 없이 JSON만 답한다. 예: {"word": "단어"}', true);
-    const w = normHint(r && r.word); if (w && wrong.indexOf(w) < 0) return w;
+    const r = await askJSON('단어 게임에서 숨겨진 한국어 명사를 추리한다. ' + ((BOTS[id] || BOTS.bot1).guess) + '\n아래는 힌트 낱말과, 숨겨진 낱말과의 유사도다.\n' + clues.join(', ') + '\n고를 수 없는 낱말(이미 틀렸거나 힌트로 나온 것, 다른 사람이 이미 고른 것): ' + (avoid.join(', ') || '없음') + '\n가장 그럴듯한 한글 명사 한 낱말을 고른다. 다른 말 없이 JSON만 답한다. 예: {"word": "낱말"}', true);
+    const w = normHint(r && r.word); if (w && avoid.indexOf(w) < 0) return w;
   } catch (e) {}
-  return randomWord(wrong);
+  return randomWord(avoid);
 }
 async function botThink(R) {
   const st = R.HS, SEC = R.SEC; let ch = false; const now = Date.now();
@@ -195,7 +206,7 @@ async function botThink(R) {
       if (T.sub === 'hint' && exId === id && !T.pending && now < T.dl) {
         if (b.hint && b.hint.k === key && b.hint.n > T.seq) continue;
         if (T.hints.filter(x => x.g === T.stage).length < CFG.maxHints) { const w = await botHint(R, id); if (R.HS !== st || st.turn !== T) return true; b.hint = { k: key, n: T.seq + 1, w }; ch = true; }
-      } else if (T.sub === 'guess' && exId !== id && !T.guessed[id] && !(b.guess && b.guess.k === key)) { const w = await botGuess(R); if (R.HS !== st || st.turn !== T) return true; b.guess = { k: key, w }; ch = true; }
+      } else if (T.sub === 'guess' && exId !== id && !T.guessed[id] && !(b.guess && b.guess.k === key)) { const w = await botGuess(R, id); if (R.HS !== st || st.turn !== T) return true; b.guess = { k: key, w }; ch = true; }
     }
   }
   return ch;
@@ -305,7 +316,7 @@ async function command(R, ws, c) {
   } else if (c === 'skip') { if (T && T.sub === 'result') T.nextAt = 0; }
   else if (c === 'retry') { if (T && T.pending && T.pending.st === 'error') { T.pending.st = 'scoring'; commit(R); } }
   else if (c === 'drop') { if (T && T.pending && T.pending.st === 'error') { T.pending = null; T.note = 'AI 채점에 실패한 힌트를 취소했습니다. 다른 단어를 내 주세요.'; commit(R); } }
-  else if (c === 'addBot') { if (st.phase === 'lobby') { let n = 1; while (R.SEC.bots['bot' + n]) n++; if (n <= 3) R.SEC.bots['bot' + n] = { pid: 'bot' + n, name: '연습봇' + n, join: true }; } }
+  else if (c === 'addBot') { if (st.phase === 'lobby') { let n = 1; while (R.SEC.bots['bot' + n]) n++; if (n <= 3) R.SEC.bots['bot' + n] = { pid: 'bot' + n, name: BOTS['bot' + n].name, join: true }; } }
   else if (c.slice(0, 5) === 'diff:') { if (st.phase === 'lobby' && DIFF[c.slice(5)]) { st.diff = c.slice(5); commit(R); } }
   else if (c === 'rounds:2' || c === 'rounds:3') { if (st.phase === 'lobby') { st.rounds = Number(c.slice(7)); commit(R); } }
   else if (c === 'clearBots') { if (st.phase === 'lobby') R.SEC.bots = {}; }

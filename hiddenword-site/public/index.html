@@ -268,7 +268,7 @@ function newRoom() { const c = Math.random().toString(36).slice(2, 8).replace(/[
 function actJoin() { const n = cleanName(ui.drafts.nick != null ? ui.drafts.nick : (P.name || LS.get('hw.name') || '')); if (!n) { ui.msg = '닉네임을 입력해 주세요.'; render(); return; } ui.msg = ''; setP({ name: n, join: true }); }
 function actLeave() { setP({ join: null }); }
 function actPick(e) { setP({ pick: { g: S.gid, e } }); }
-function actWord() { if (ui.sel == null) return; const k = S.phase === 'setup' ? 'w1' : 'w2'; const i = ui.sel; ui.sel = null; setP({ [k]: { g: S.gid, i } }); }
+function actWord() { if (ui.sel == null) return; const k = 'w' + (S.round + 1); const i = ui.sel; ui.sel = null; setP({ [k]: { g: S.gid, i } }); }
 function actHint() {
   const w = normHint(ui.drafts.hint || '');
   if (!w) { ui.msg = '한글 명사 한 단어만 입력해 주세요.'; render(); return; }
@@ -287,10 +287,14 @@ const draft = id => e => { ui.drafts[id] = e.target.value; };
 
 /* ---------- views ---------- */
 function myHiddenIdx(round) { const w = P['w' + round]; return (w && S && w.g === S.gid) ? w.i : null; }
-function usedIdx() { // my round-1 word, known publicly once round 1 is over
-  const i = myHiddenIdx(1); if (i != null) return i;
-  const hrow = S.history.find(x => x.r === 1 && x.ex === pid); if (!hrow) return null;
-  const idx = envWords(S.envOf[pid]).indexOf(hrow.word); return idx < 0 ? null : idx;
+function usedIdxs() { // words I already used in earlier rounds
+  const out = [], env = envWords();
+  for (let r = 1; r <= S.round; r++) {
+    let i = myHiddenIdx(r);
+    if (i == null) { const row = S.history.find(x => x.r === r && x.ex === pid); if (row) { const k = env.indexOf(row.word); if (k >= 0) i = k; } }
+    if (i != null) out.push(i);
+  }
+  return out;
 }
 function hostBar() {
   if (!isHost || !S) return null;
@@ -316,10 +320,10 @@ const SLIDES = [
     pic: () => [mini('나침반', 96), h('span', { class: 'arrow' }, '또는'), mini('약도', 97, ' ai', 'AI 힌트')] },
   { t: '정답을 적고 동시에 공개', d: '출제자를 뺀 모두가 5분 안에 히든워드라고 생각하는 단어를 적습니다. 다 적으면 한꺼번에 공개됩니다.',
     pic: () => [h('div', { class: 'guess' }, h('div', { class: 'small mute' }, '민지'), h('div', { class: 'g' }, '지구본 ✕')), h('div', { class: 'guess hit' }, h('div', { class: 'small mute' }, '누리'), h('div', { class: 'g' }, '지도 ○'))] },
-  { t: '맞히면 내 점수, 못 맞히면 출제자 점수', d: '한 명이라도 맞히면 맞힌 사람이 점수를 얻고 그 출제자의 차례가 끝납니다. 아무도 못 맞히면 출제자가 점수를 얻고 힌트를 다시 냅니다. 최대 3번까지입니다.',
-    pic: () => [h('div', { class: 'stage now' }, '1차 · 1점'), h('span', { class: 'arrow' }, '→'), h('div', { class: 'stage now' }, '2차 · 2점'), h('span', { class: 'arrow' }, '→'), h('div', { class: 'stage now' }, '3차 · 3점')] },
-  { t: '2라운드는 점수 2배', d: '모두가 한 번씩 출제자를 하면 1라운드가 끝납니다. 남은 단어 4개 중 하나로 2라운드를 하고, 점수는 2배입니다. 두 라운드 점수를 더해 순위를 정합니다.',
-    pic: () => [h('div', { class: 'stage' }, '1라운드'), h('span', { class: 'arrow' }, '+'), h('div', { class: 'stage now' }, '2라운드'), h('span', { class: 'x2' }, '×2')] },
+  { t: '맞히면 내 점수, 못 맞히면 출제자 점수', d: '한 명이라도 맞히면 맞힌 사람이 점수를 얻고 그 출제자의 차례가 끝납니다. 아무도 못 맞히면 출제자가 점수를 얻고 힌트를 다시 냅니다. 힌트 제시는 최대 3번이고, 몇 번째든 점수는 같습니다.',
+    pic: () => [h('div', { class: 'stage now' }, '1차 힌트'), h('span', { class: 'arrow' }, '→'), h('div', { class: 'stage now' }, '2차 힌트'), h('span', { class: 'arrow' }, '→'), h('div', { class: 'stage now' }, '3차 힌트')] },
+  { t: '라운드가 올라가면 점수도 올라간다', d: '모두가 한 번씩 출제자를 하면 한 라운드가 끝납니다. 1라운드는 1점씩, 2라운드는 2점씩, 3라운드는 3점씩입니다. 라운드마다 봉투에 남은 단어 중 하나를 새 히든워드로 고르고, 모든 라운드 점수를 더해 순위를 정합니다.',
+    pic: () => [h('div', { class: 'stage now' }, '1라운드 · 1점'), h('span', { class: 'arrow' }, '→'), h('div', { class: 'stage now' }, '2라운드 · 2점'), h('span', { class: 'arrow' }, '→'), h('div', { class: 'stage now' }, '3라운드 · 3점')] },
 ];
 function slideTo(i) { ui.slide = Math.max(0, Math.min(SLIDES.length - 1, i)); render(true); }
 function vRules() {
@@ -368,11 +372,19 @@ function vLobby() {
       isHost ? h('div', { class: 'row' }, h('button', { class: 'btn primary', id: 'bStart', onclick: () => cmd('start'), disabled: S.players.length < 2 }, '게임 시작'),
         h('button', { class: 'btn', id: 'bBot', onclick: () => cmd('addBot'), disabled: S.players.length >= CFG.maxPlayers || S.players.filter(p => /^bot\d$/.test(p.id)).length >= 3 }, '연습 상대 추가'),
         S.players.some(p => /^bot\d$/.test(p.id)) ? h('button', { class: 'btn ghost', id: 'bNoBot', onclick: () => cmd('clearBots') }, '연습 상대 빼기') : null) : h('div', { class: 'small mute' }, '방장이 게임을 시작하면 딜러룸으로 이동합니다.'),
+      roundsBox(),
       diffBox(),
       rules()),
     hostBar());
 }
 const DIFFS = [['easy', '쉬움', '가까운 낱말이면 90%가 비교적 쉽게 나옵니다.'], ['normal', '보통', '아주 가까운 낱말이어야 90%를 넘깁니다.'], ['hard', '어려움', '동의어에 가까운 낱말이어야 90%를 넘깁니다.']];
+function roundsBox() {
+  const cur = S.rounds || 3;
+  return h('div', { class: 'stack', style: 'gap:8px' },
+    h('div', { class: 'eyebrow' }, '라운드 수'),
+    isHost ? h('div', { class: 'row' }, [2, 3].map(n => h('button', { class: 'btn' + (n === cur ? ' primary' : ''), id: 'bRounds-' + n, onclick: () => cmd('rounds:' + n) }, n + '라운드'))) : h('div', null, h('b', null, cur + '라운드')),
+    h('div', { class: 'small mute' }, '1라운드는 1점씩, 2라운드는 2점씩' + (cur === 3 ? ', 3라운드는 3점씩' : '') + ' 얻습니다.'));
+}
 function diffBox() {
   const cur = DIFFS.find(x => x[0] === (S.diff || 'normal')) || DIFFS[1];
   return h('div', { class: 'stack', style: 'gap:8px' },
@@ -395,19 +407,19 @@ function vSetup() {
       })),
       P.pick && P.pick.g === S.gid ? h('div', { class: 'small mute' }, '봉투를 여는 중입니다. 다른 사람이 먼저 가져갔다면 다른 봉투를 골라 주세요.') : null);
   } else if (!ready) {
-    const words = envWords(env), used = first ? null : usedIdx();
-    const sent = P[first ? 'w1' : 'w2']; const pendingSend = sent && sent.g === S.gid;
+    const words = envWords(env), used = first ? [] : usedIdxs();
+    const sent = P['w' + (S.round + 1)]; const pendingSend = sent && sent.g === S.gid;
     body = h('div', { class: 'stack' },
-      h('p', null, first ? '1라운드에 숨길 히든워드를 하나 고르세요.' : '2라운드 히든워드를 고르세요. 1라운드에 쓴 단어는 다시 쓸 수 없습니다.'),
-      h('div', { class: 'words' }, words.map((w, i) => h('button', { class: 'word' + (ui.sel === i ? ' sel' : ''), id: 'word' + i, disabled: used === i || pendingSend, onclick: () => { ui.sel = i; render(); } }, w))),
+      h('p', null, first ? '1라운드에 숨길 히든워드를 하나 고르세요.' : (S.round + 1) + '라운드 히든워드를 고르세요. 앞 라운드에 쓴 단어는 다시 쓸 수 없습니다.'),
+      h('div', { class: 'words' }, words.map((w, i) => h('button', { class: 'word' + (ui.sel === i ? ' sel' : ''), id: 'word' + i, disabled: used.indexOf(i) >= 0 || pendingSend, onclick: () => { ui.sel = i; render(); } }, w))),
       h('div', { class: 'row' }, h('button', { class: 'btn primary', id: 'bWord', disabled: ui.sel == null || pendingSend, onclick: actWord }, pendingSend ? '전달 중…' : '이 단어로 확정')));
   } else {
-    const i = myHiddenIdx(first ? 1 : 2), w = i != null ? envWords(env)[i] : null;
+    const i = myHiddenIdx(S.round + 1), w = i != null ? envWords(env)[i] : null;
     body = h('div', { class: 'stack' }, w ? h('div', null, h('span', { class: 'secret' }, h('span', { class: 'small mute' }, '내 히든워드'), h('b', null, w))) : null, h('p', { class: 'mute' }, '다른 플레이어를 기다리고 있습니다.'));
   }
   return h('div', { class: 'stack' },
     h('div', { class: 'card stack' },
-      h('div', null, h('div', { class: 'eyebrow' }, first ? '딜러룸 · 1라운드 준비' : '딜러룸 · 2라운드 준비 (점수 2배)'), h('h2', { class: 'big' }, first ? '봉투와 히든워드 고르기' : '두 번째 히든워드 고르기')),
+      h('div', null, h('div', { class: 'eyebrow' }, '딜러룸 · ' + (S.round + 1) + '라운드 준비 (이번 라운드는 ' + (S.round + 1) + '점씩)'), h('h2', { class: 'big' }, first ? '봉투와 히든워드 고르기' : (S.round + 1) + '라운드 히든워드 고르기')),
       body, waiting),
     hostBar());
 }
@@ -433,17 +445,17 @@ function hintRows(T, key) {
   return h('div', { class: 'hints', id: 'hints' }, rows);
 }
 function vPlay() {
-  const T = S.turn, exId = S.order[T.ex], amEx = exId === pid, me = iPlay(), mult = S.round === 2 ? 2 : 1, key = tkey(S);
+  const T = S.turn, exId = S.order[T.ex], amEx = exId === pid, me = iPlay(), pts = S.round, key = tkey(S);
   const count = T.hints.filter(x => x.g === T.stage).length;
   const head = h('div', { class: 'card stack' },
     h('div', { class: 'banner' },
       h('div', { style: 'flex:1;min-width:200px' },
-        h('div', { class: 'eyebrow' }, S.round + '라운드' + (mult === 2 ? ' · 점수 2배' : '') + ' · ' + (T.ex + 1) + '/' + S.order.length + '번째 출제'),
+        h('div', { class: 'eyebrow' }, S.round + '/' + (S.rounds || 3) + '라운드 · 이번 라운드는 ' + pts + '점씩 · ' + (T.ex + 1) + '/' + S.order.length + '번째 출제'),
         h('h2', { class: 'big' }, '출제자 ' + nameOf(exId) + (amEx ? ' (나)' : ''))),
       (T.sub === 'hint' || T.sub === 'guess') ? h('div', { style: 'text-align:right' }, h('div', { class: 'small mute' }, T.sub === 'hint' ? '출제자의 힌트 제시 시간' : '정답 제출 남은 시간'), h('div', { class: 'timer', id: 'timer', 'aria-label': '남은 시간' }, '')) : null),
     h('div', { class: 'steps' }, h('span', { class: T.sub === 'hint' || T.sub === 'bonus' ? 'on' : '' }, '① 출제자가 힌트 제시'), '→', h('span', { class: T.sub === 'guess' ? 'on' : '' }, '② 나머지가 정답 입력'), '→', h('span', { class: T.sub === 'result' ? 'on' : '' }, '③ 동시 공개')),
     h('div', { class: 'order' }, h('span', { class: 'small mute' }, '출제 순서'), S.order.map((id, i) => h('span', { class: 'chip' + (i === T.ex ? ' now' : i < T.ex ? ' done' : '') }, (i + 1) + '. ' + nameOf(id)))),
-    h('div', { class: 'stages' }, [1, 2, 3].map(g => h('div', { class: 'stage' + (g === T.stage ? ' now' : g < T.stage ? ' past' : '') }, g + '차 힌트 · ' + g * mult + '점'))));
+    h('div', { class: 'stages' }, [1, 2, 3].map(g => h('div', { class: 'stage' + (g === T.stage ? ' now' : g < T.stage ? ' past' : '') }, g + '차 힌트'))));
   const board = h('div', { class: 'card stack board' },
     h('div', { class: 'row', style: 'justify-content:space-between' }, h('div', { class: 'eyebrow' }, '힌트와 유사도'), T.sub === 'hint' ? h('span', { class: 'small mute' }, T.stage + '차 · ' + count + '/' + CFG.maxHints + '개') : null),
     hintRows(T, key),
@@ -477,7 +489,7 @@ function vPlay() {
     else if (T.guessed[pid] || (P.guess && P.guess.k === key)) act = h('div', { class: 'card stack' }, h('p', { style: 'margin:0' }, '정답을 제출했습니다: ', h('b', null, P.guess && P.guess.k === key ? P.guess.w : ''), ' · 모두 제출하면 동시에 공개됩니다.'), status);
     else act = h('div', { class: 'card stack' },
       h('div', { class: 'eyebrow' }, '내 정답 입력 · 지금 입력하세요'),
-      h('p', { style: 'margin:0' }, '히든워드라고 생각하는 단어를 적으세요. 맞히면 ' + T.stage * mult + '점. 제출하면 바꿀 수 없습니다.'),
+      h('p', { style: 'margin:0' }, '히든워드라고 생각하는 단어를 적으세요. 맞히면 ' + pts + '점. 제출하면 바꿀 수 없습니다.'),
       h('div', { class: 'row' },
         h('input', { type: 'text', id: 'guess', maxlength: 20, placeholder: '정답 단어', value: ui.drafts.guess || '', oninput: draft('guess'), onkeydown: onEnter(actGuess), 'aria-label': '정답 단어', autocomplete: 'off' }),
         h('button', { class: 'btn primary', id: 'bGuess', onclick: actGuess }, '정답 제출')),
@@ -535,9 +547,9 @@ function sideView() {
 }
 function envCard() {
   if (!S || !iPlay() || S.envOf[pid] == null || S.phase === 'end' || S.phase === 'lobby') return null;
-  const cur = myHiddenIdx(S.round || 1), used = S.round === 2 || S.phase === 'setup2' ? usedIdx() : null;
+  const cur = S.phase === 'play' ? myHiddenIdx(S.round) : null, used = usedIdxs().filter(i => i !== cur);
   return h('div', { class: 'card', style: 'margin-top:16px' }, h('details', null, h('summary', null, '내 봉투 열어 보기 (나만 보임)'),
-    h('ul', { style: 'margin:10px 0 0;padding-left:18px' }, envWords(S.envOf[pid]).map((w, i) => h('li', null, w, i === cur && S.phase === 'play' ? h('span', { class: 'small', style: 'color:var(--seal)' }, ' · 지금 히든워드') : (i === used ? h('span', { class: 'small mute' }, ' · 1라운드 사용') : null))))));
+    h('ul', { style: 'margin:10px 0 0;padding-left:18px' }, envWords(S.envOf[pid]).map((w, i) => h('li', null, w, i === cur && S.phase === 'play' ? h('span', { class: 'small', style: 'color:var(--seal)' }, ' · 지금 히든워드') : (used.indexOf(i) >= 0 ? h('span', { class: 'small mute' }, ' · 이미 사용') : null))))));
 }
 function statusView() {
   if (!roomCode) return h('span');
